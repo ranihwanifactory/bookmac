@@ -57,8 +57,8 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose 
 
       await addDoc(collection(db, 'posts'), {
         uid: currentUser.uid,
-        authorName: currentUser.displayName,
-        authorPhoto: currentUser.photoURL,
+        authorName: currentUser.displayName || '익명', // Prevent undefined
+        authorPhoto: currentUser.photoURL || null, // Prevent undefined (Firestore supports null)
         bookTitle: title,
         bookAuthor: author,
         coverImage: finalCover,
