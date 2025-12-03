@@ -1,11 +1,26 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Initialize Gemini
-// Always use process.env.API_KEY directly as per guidelines.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+let ai: GoogleGenAI | null = null;
+
+const getAiClient = () => {
+  if (!ai) {
+    // Check if process is defined to avoid crashing in environments without polyfills
+    const apiKey = typeof process !== 'undefined' && process.env ? process.env.API_KEY : '';
+    if (apiKey) {
+      ai = new GoogleGenAI({ apiKey });
+    }
+  }
+  return ai;
+};
 
 export const generateBookContent = async (bookTitle: string, author: string): Promise<{ review: string, quote: string } | null> => {
   try {
+    const client = getAiClient();
+    if (!client) {
+      console.warn("Gemini API Key not found or client not initialized");
+      return null;
+    }
+
     const model = 'gemini-2.5-flash';
     const prompt = `
       I am writing a social media post about the book "${bookTitle}" by ${author}.
@@ -14,7 +29,7 @@ export const generateBookContent = async (bookTitle: string, author: string): Pr
       2. A famous or meaningful quote from the book.
     `;
 
-    const response = await ai.models.generateContent({
+    const response = await client.models.generateContent({
       model,
       contents: prompt,
       config: {
