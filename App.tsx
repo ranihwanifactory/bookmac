@@ -16,24 +16,47 @@ const App: React.FC = () => {
   // Auth State Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
+      if (firebaseUser && firebaseUser.uid) {
         // Fetch or create user profile in Firestore
         const userRef = doc(db, 'users', firebaseUser.uid);
-        const userSnap = await getDoc(userRef);
+        try {
+          const userSnap = await getDoc(userRef);
 
-        if (userSnap.exists()) {
-          setUser(userSnap.data() as UserProfile);
-        } else {
-          const newUser: UserProfile = {
-            uid: firebaseUser.uid,
-            displayName: firebaseUser.displayName,
-            email: firebaseUser.email,
-            photoURL: firebaseUser.photoURL,
-            followers: [],
-            following: []
-          };
-          await setDoc(userRef, newUser);
-          setUser(newUser);
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            // IMPORTANT: Ensure uid and other optional fields are defined to avoid "Unsupported field value: undefined"
+            setUser({
+              uid: firebaseUser.uid, // Always use auth uid as source of truth
+              displayName: userData.displayName || firebaseUser.displayName || 'User',
+              email: userData.email || firebaseUser.email || null,
+              photoURL: userData.photoURL || firebaseUser.photoURL || null,
+              followers: userData.followers || [],
+              following: userData.following || [],
+              bio: userData.bio || ''
+            });
+          } else {
+            const newUser: UserProfile = {
+              uid: firebaseUser.uid,
+              displayName: firebaseUser.displayName || 'User',
+              email: firebaseUser.email || null,
+              photoURL: firebaseUser.photoURL || null,
+              followers: [],
+              following: []
+            };
+            await setDoc(userRef, newUser);
+            setUser(newUser);
+          }
+        } catch (error) {
+          console.error("Error fetching user profile:", error);
+          // Fallback to basic auth info if firestore fails
+           setUser({
+              uid: firebaseUser.uid,
+              displayName: firebaseUser.displayName || 'User',
+              email: firebaseUser.email || null,
+              photoURL: firebaseUser.photoURL || null,
+              followers: [],
+              following: []
+            });
         }
       } else {
         setUser(null);
@@ -137,7 +160,7 @@ const App: React.FC = () => {
                <div className="flex items-center gap-3 px-2">
                  <img src={user.photoURL || ''} alt="Me" className="w-8 h-8 rounded-full border border-gray-300" />
                  <div className="hidden md:block">
-                    <p className="text-sm font-bold text-gray-900 truncate w-32">{user.displayName}</p>
+                    <p className="text-sm font-bold text-gray-900 truncate w-32">{user.displayName || 'User'}</p>
                     <button onClick={handleLogout} className="text-xs text-red-500 hover:underline">로그아웃</button>
                  </div>
                  {/* Mobile Logout Icon */}

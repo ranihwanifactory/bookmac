@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Post, Comment, UserProfile } from '../types';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { doc, updateDoc, arrayUnion, arrayRemove, collection, addDoc, onSnapshot, query, orderBy, deleteDoc } from 'firebase/firestore';
 
 interface PostCardProps {
@@ -60,12 +60,16 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || !newComment.trim()) return;
+    
+    // Fail-safe UID check
+    const uid = currentUser.uid || auth.currentUser?.uid;
+    if (!uid) return;
 
     try {
       await addDoc(collection(db, 'posts', post.id, 'comments'), {
         postId: post.id,
         parentId: null, // Top level comment
-        uid: currentUser.uid,
+        uid: uid,
         authorName: currentUser.displayName || '익명',
         authorPhoto: currentUser.photoURL,
         text: newComment,

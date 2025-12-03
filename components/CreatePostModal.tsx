@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db, auth } from '../firebase';
+import { collection, addDoc } from 'firebase/firestore';
 import { UserProfile } from '../types';
 import { generateBookContent } from '../services/geminiService';
 
@@ -28,11 +28,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose 
       return;
     }
     
-    // Check if API key is in env (client side check for demo)
-    if (!process.env.API_KEY) {
-        alert("환경 설정에 Gemini API 키가 누락되었습니다.");
-        return;
-    }
+    // API key check removed as per guidelines.
 
     setAiLoading(true);
     const result = await generateBookContent(title, author);
@@ -50,15 +46,22 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose 
     e.preventDefault();
     if (!title || !review) return;
 
+    // Fail-safe to ensure uid exists
+    const uid = currentUser.uid || auth.currentUser?.uid;
+    if (!uid) {
+        alert("로그인 정보가 올바르지 않습니다. 다시 로그인해주세요.");
+        return;
+    }
+
     setLoading(true);
     try {
       // Use a placeholder if no URL provided
       const finalCover = coverUrl.trim() || `https://covers.openlibrary.org/b/title/${encodeURIComponent(title)}-L.jpg?default=false`;
 
       await addDoc(collection(db, 'posts'), {
-        uid: currentUser.uid,
-        authorName: currentUser.displayName || '익명', // Prevent undefined
-        authorPhoto: currentUser.photoURL || null, // Prevent undefined (Firestore supports null)
+        uid: uid, // Use the guaranteed UID
+        authorName: currentUser.displayName || '익명', 
+        authorPhoto: currentUser.photoURL || null, 
         bookTitle: title,
         bookAuthor: author,
         coverImage: finalCover,
@@ -66,11 +69,12 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose 
         review,
         rating,
         likes: [],
-        createdAt: Date.now() // Use client TS for immediate ordering or serverTimestamp for consistency
+        createdAt: Date.now() 
       });
       onClose();
     } catch (error) {
       console.error("Error creating post", error);
+      alert("게시물을 작성하는 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
