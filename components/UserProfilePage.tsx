@@ -31,7 +31,9 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, currentUser, 
         const userRef = doc(db, 'users', userId);
         const userSnap = await getDoc(userRef);
         if (userSnap.exists()) {
-          setProfile(userSnap.data() as UserProfile);
+          // Explicitly merge doc.id as uid to ensure it exists, even if not stored in data()
+          const userData = userSnap.data();
+          setProfile({ ...userData, uid: userSnap.id } as UserProfile);
         } else {
           setProfile(null);
         }
