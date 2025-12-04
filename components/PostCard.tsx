@@ -13,6 +13,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
   
   // Initialize state with safe defaults
   const likes = post.likes || [];
@@ -21,7 +22,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
 
-  // Sync state when props change (e.g. login status or realtime updates)
+  // Sync state when props change
   useEffect(() => {
     const uid = currentUser?.uid || auth.currentUser?.uid;
     setIsLiked(likes.includes(uid || ''));
@@ -31,10 +32,21 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
   // Load comments when toggled
   useEffect(() => {
     if (showComments) {
-      const q = query(collection(db, 'posts', post.id, 'comments'), orderBy('createdAt', 'asc'));
+      setCommentError(null);
+      
+      // Use subcollection 'posts/{postId}/comments'
+      const commentsRef = collection(db, 'posts', post.id, 'comments');
+      // Simple orderBy should work without composite index for subcollections usually
+      const q = query(commentsRef, orderBy('createdAt', 'asc'));
+      
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        setComments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment)));
+        const loadedComments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment));
+        setComments(loadedComments);
+      }, (error) => {
+        console.error("Error fetching comments:", error);
+        setCommentError("댓글을 불러올 수 없습니다 (권한 부족)");
       });
+
       return () => unsubscribe();
     }
   }, [showComments, post.id]);
@@ -56,12 +68,17 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
       } else {
         await updateDoc(postRef, { likes: arrayUnion(uid) });
       }
-    } catch (err) {
+    } catch (err: any) {
       // Revert if error
       setIsLiked(wasLiked);
       setLikeCount(prev => wasLiked ? prev + 1 : prev - 1);
       console.error("Error liking post:", err);
-      alert("좋아요 반영 실패");
+      
+      if (err.code === 'permission-denied') {
+        alert("좋아요 권한이 없습니다. 관리자에게 문의하세요.");
+      } else {
+        alert("좋아요 반영 실패: " + err.message);
+      }
     }
   };
 
@@ -87,9 +104,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
 
     setSubmitting(true);
     try {
+      // Add to subcollection 'posts/{postId}/comments'
       await addDoc(collection(db, 'posts', post.id, 'comments'), {
         postId: post.id,
-        parentId: null, // Top level comment
+        parentId: null,
         uid: uid,
         authorName: currentUser?.displayName || auth.currentUser?.displayName || '익명',
         authorPhoto: currentUser?.photoURL || auth.currentUser?.photoURL || null,
@@ -98,9 +116,13 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
       });
       
       setNewComment('');
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error adding comment:", err);
-      alert("댓글 작성 중 오류가 발생했습니다.");
+      if (err.code === 'permission-denied') {
+        alert("댓글 작성 권한이 없습니다. 로그인 상태를 확인하거나 관리자에게 문의하세요.");
+      } else {
+        alert("댓글 작성 실패: " + err.message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -183,6 +205,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
       {/* Comments Section */}
       {showComments && (
         <div className="bg-gray-50 border-t border-gray-100 p-4 animate-fade-in">
+            {commentError && (
+              <div className="text-red-500 text-xs text-center mb-2">{commentError}</div>
+            )}
+
             {comments.length > 0 ? (
                 comments.map((comment) => (
                     <div key={comment.id} className="mb-3 flex gap-2">
@@ -198,9 +224,11 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
                     </div>
                 ))
             ) : (
-                <div className="text-center py-4 text-gray-400 text-xs">
-                    첫 댓글을 남겨보세요!
-                </div>
+                !commentError && (
+                  <div className="text-center py-4 text-gray-400 text-xs">
+                      첫 댓글을 남겨보세요!
+                  </div>
+                )
             )}
             
             {currentUser ? (

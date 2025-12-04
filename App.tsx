@@ -12,6 +12,7 @@ const App: React.FC = () => {
   const [feedType, setFeedType] = useState<FeedType>(FeedType.GLOBAL);
   const [posts, setPosts] = useState<Post[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // Auth State Listener
   useEffect(() => {
@@ -24,9 +25,8 @@ const App: React.FC = () => {
 
           if (userSnap.exists()) {
             const userData = userSnap.data();
-            // IMPORTANT: Ensure uid and other optional fields are defined to avoid "Unsupported field value: undefined"
             setUser({
-              uid: firebaseUser.uid, // Always use auth uid as source of truth
+              uid: firebaseUser.uid, 
               displayName: userData.displayName || firebaseUser.displayName || 'User',
               email: userData.email || firebaseUser.email || null,
               photoURL: userData.photoURL || firebaseUser.photoURL || null,
@@ -69,14 +69,6 @@ const App: React.FC = () => {
   // Fetch Posts
   useEffect(() => {
     let q;
-    
-    // Simplification for NoSQL: 
-    // "Following" feed is tricky without Algolia or complex client-side filtering.
-    // We will fetch all recent posts and filter client side for 'following' if list is small,
-    // or use `where('uid', 'in', user.following)` (limited to 10 items in Firestore).
-    // For this demo, we'll fetch global and filter in memory if "Following" is selected, 
-    // or just show Global if following list is empty.
-    
     const postsRef = collection(db, 'posts');
     q = query(postsRef, orderBy('createdAt', 'desc'));
 
@@ -84,12 +76,15 @@ const App: React.FC = () => {
       const allPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
       
       if (feedType === FeedType.FOLLOWING && user) {
-        // Client-side filtering for the demo
         const followingPosts = allPosts.filter(p => user.following.includes(p.uid) || p.uid === user.uid);
         setPosts(followingPosts);
       } else {
         setPosts(allPosts);
       }
+      setError(null);
+    }, (err) => {
+        console.error("Error fetching posts:", err);
+        setError("게시물을 불러올 수 없습니다. 권한 설정을 확인해주세요.");
     });
 
     return () => unsubscribe();
@@ -107,15 +102,6 @@ const App: React.FC = () => {
     await signOut(auth);
     setFeedType(FeedType.GLOBAL);
   };
-
-  // Follow/Unfollow logic would go here, updating both users
-  const handleFollowUser = async (targetUid: string) => {
-      if(!user) return;
-      const myRef = doc(db, 'users', user.uid);
-      // Logic would be added to PostCard header to show "Follow" button if not currently following
-      // and not self.
-      // For brevity in this file, logic is abstract.
-  }
 
   if (loading) {
     return (
@@ -203,23 +189,30 @@ const App: React.FC = () => {
             )}
          </header>
 
-         <div className="space-y-6">
-            {posts.length === 0 ? (
-                <div className="text-center py-20">
-                    <div className="text-gray-300 text-6xl mb-4">
-                        <i className="fa-solid fa-book-open"></i>
+         {error ? (
+             <div className="bg-red-50 text-red-700 p-4 rounded-lg text-center">
+                 <i className="fa-solid fa-triangle-exclamation mb-2 text-2xl"></i>
+                 <p>{error}</p>
+             </div>
+         ) : (
+             <div className="space-y-6">
+                {posts.length === 0 ? (
+                    <div className="text-center py-20">
+                        <div className="text-gray-300 text-6xl mb-4">
+                            <i className="fa-solid fa-book-open"></i>
+                        </div>
+                        <p className="text-gray-500">아직 게시물이 없습니다. 첫 번째 책을 공유해보세요!</p>
                     </div>
-                    <p className="text-gray-500">아직 게시물이 없습니다. 첫 번째 책을 공유해보세요!</p>
-                </div>
-            ) : (
-                posts.map(post => (
-                    <PostCard key={post.id} post={post} currentUser={user} />
-                ))
-            )}
-         </div>
+                ) : (
+                    posts.map(post => (
+                        <PostCard key={post.id} post={post} currentUser={user} />
+                    ))
+                )}
+             </div>
+         )}
       </main>
 
-      {/* Right Sidebar (Trending/Suggestions) - Optional, hidden on mobile */}
+      {/* Right Sidebar (Trending/Suggestions) */}
       <aside className="hidden lg:block w-80 p-8 border-l border-gray-200 sticky top-0 h-screen">
          <div className="mb-8">
             <h3 className="font-bold text-gray-900 mb-4">인기 도서</h3>
