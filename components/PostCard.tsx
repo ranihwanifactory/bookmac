@@ -6,9 +6,10 @@ import { doc, updateDoc, arrayUnion, arrayRemove, collection, addDoc, onSnapshot
 interface PostCardProps {
   post: Post;
   currentUser: UserProfile | null;
+  onEdit?: (post: Post) => void;
 }
 
-const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
+const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit }) => {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -181,9 +182,16 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
           </div>
         </div>
         {currentUid === post.uid && (
-            <button onClick={handleDeletePost} className="text-gray-400 hover:text-red-500 transition-colors p-2">
-                <i className="fa-solid fa-trash"></i>
-            </button>
+            <div className="flex gap-1">
+                {onEdit && (
+                    <button onClick={() => onEdit(post)} className="text-gray-400 hover:text-amber-600 transition-colors p-2" title="수정">
+                        <i className="fa-solid fa-pen"></i>
+                    </button>
+                )}
+                <button onClick={handleDeletePost} className="text-gray-400 hover:text-red-500 transition-colors p-2" title="삭제">
+                    <i className="fa-solid fa-trash"></i>
+                </button>
+            </div>
         )}
       </div>
 

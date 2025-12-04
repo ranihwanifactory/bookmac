@@ -14,6 +14,9 @@ const App: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
+  // Track which post is being edited
+  const [editingPost, setEditingPost] = useState<Post | null>(null);
+  
   // Auth State Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -103,6 +106,16 @@ const App: React.FC = () => {
     setFeedType(FeedType.GLOBAL);
   };
 
+  const handleEditPost = (post: Post) => {
+    setEditingPost(post);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsCreateModalOpen(false);
+    setEditingPost(null);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -180,7 +193,7 @@ const App: React.FC = () => {
             {/* Create Button (Desktop/Header) */}
             {user && (
                 <button 
-                    onClick={() => setIsCreateModalOpen(true)}
+                    onClick={() => { setEditingPost(null); setIsCreateModalOpen(true); }}
                     className="hidden md:flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 transition shadow-sm"
                 >
                     <i className="fa-solid fa-feather"></i>
@@ -205,7 +218,12 @@ const App: React.FC = () => {
                     </div>
                 ) : (
                     posts.map(post => (
-                        <PostCard key={post.id} post={post} currentUser={user} />
+                        <PostCard 
+                            key={post.id} 
+                            post={post} 
+                            currentUser={user} 
+                            onEdit={handleEditPost} 
+                        />
                     ))
                 )}
              </div>
@@ -239,7 +257,7 @@ const App: React.FC = () => {
       {/* Mobile Floating Action Button */}
       {user && (
         <button 
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={() => { setEditingPost(null); setIsCreateModalOpen(true); }}
             className="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-amber-600 text-white rounded-full shadow-lg flex items-center justify-center text-xl z-30 hover:bg-amber-700 active:scale-95 transition-all"
         >
             <i className="fa-solid fa-feather"></i>
@@ -248,7 +266,11 @@ const App: React.FC = () => {
 
       {/* Modals */}
       {isCreateModalOpen && user && (
-          <CreatePostModal currentUser={user} onClose={() => setIsCreateModalOpen(false)} />
+          <CreatePostModal 
+            currentUser={user} 
+            onClose={handleCloseModal} 
+            postToEdit={editingPost}
+          />
       )}
     </div>
   );

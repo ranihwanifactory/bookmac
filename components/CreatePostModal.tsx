@@ -1,26 +1,28 @@
 import React, { useState } from 'react';
 import { db, auth } from '../firebase';
-import { collection, addDoc } from 'firebase/firestore';
-import { UserProfile } from '../types';
+import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { UserProfile, Post } from '../types';
 import { generateBookContent } from '../services/geminiService';
 
 interface CreatePostModalProps {
   currentUser: UserProfile;
   onClose: () => void;
+  postToEdit?: Post | null; // Optional prop for edit mode
 }
 
-const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose }) => {
+const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose, postToEdit }) => {
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   
-  const [title, setTitle] = useState('');
-  const [author, setAuthor] = useState('');
-  const [quote, setQuote] = useState('');
-  const [review, setReview] = useState('');
-  const [rating, setRating] = useState(5);
-  // Mocking image upload by just using a random book cover or text input
-  // In real app: Use Firebase Storage
-  const [coverUrl, setCoverUrl] = useState('');
+  // Initialize state with postToEdit data if available
+  const [title, setTitle] = useState(postToEdit?.bookTitle || '');
+  const [author, setAuthor] = useState(postToEdit?.bookAuthor || '');
+  const [quote, setQuote] = useState(postToEdit?.quote || '');
+  const [review, setReview] = useState(postToEdit?.review || '');
+  const [rating, setRating] = useState(postToEdit?.rating || 5);
+  const [coverUrl, setCoverUrl] = useState(postToEdit?.coverImage || '');
+
+  const isEditMode = !!postToEdit;
 
   const handleAiAssist = async () => {
     if (!title || !author) {
@@ -28,8 +30,6 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose 
       return;
     }
     
-    // API key check removed as per guidelines.
-
     setAiLoading(true);
     const result = await generateBookContent(title, author);
     setAiLoading(false);
@@ -46,7 +46,6 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose 
     e.preventDefault();
     if (!title || !review) return;
 
-    // Fail-safe to ensure uid exists
     const uid = currentUser.uid || auth.currentUser?.uid;
     if (!uid) {
         alert("로그인 정보가 올바르지 않습니다. 다시 로그인해주세요.");
@@ -55,26 +54,39 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose 
 
     setLoading(true);
     try {
-      // Use a placeholder if no URL provided
       const finalCover = coverUrl.trim() || `https://covers.openlibrary.org/b/title/${encodeURIComponent(title)}-L.jpg?default=false`;
 
-      await addDoc(collection(db, 'posts'), {
-        uid: uid, // Use the guaranteed UID
-        authorName: currentUser.displayName || '익명', 
-        authorPhoto: currentUser.photoURL || null, 
+      const postData = {
         bookTitle: title,
         bookAuthor: author,
         coverImage: finalCover,
         quote,
         review,
         rating,
-        likes: [],
-        createdAt: Date.now() 
-      });
+        // Update timestamp only on creation, or add updatedAt for edits if desired. 
+        // For now keeping original createdAt for edits to maintain order, or we could update it.
+        ...(isEditMode ? {} : { 
+            uid: uid,
+            authorName: currentUser.displayName || '익명', 
+            authorPhoto: currentUser.photoURL || null,
+            likes: [],
+            createdAt: Date.now() 
+        })
+      };
+
+      if (isEditMode && postToEdit) {
+        // Update existing doc
+        const postRef = doc(db, 'posts', postToEdit.id);
+        await updateDoc(postRef, postData);
+      } else {
+        // Create new doc
+        await addDoc(collection(db, 'posts'), postData as any);
+      }
+      
       onClose();
     } catch (error) {
-      console.error("Error creating post", error);
-      alert("게시물을 작성하는 중 오류가 발생했습니다.");
+      console.error("Error saving post", error);
+      alert("게시물을 저장하는 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
@@ -84,7 +96,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose 
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
         <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-white sticky top-0">
-          <h2 className="font-bold text-lg">새 추천 작성</h2>
+          <h2 className="font-bold text-lg">{isEditMode ? '게시물 수정' : '새 추천 작성'}</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
             <i className="fa-solid fa-xmark text-xl"></i>
           </button>
@@ -184,7 +196,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose 
              disabled={loading || !title || !review}
              className="w-full bg-black text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50"
            >
-             {loading ? '게시 중...' : '추천 공유하기'}
+             {loading ? '저장 중...' : (isEditMode ? '수정 완료' : '추천 공유하기')}
            </button>
         </div>
       </div>
