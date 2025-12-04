@@ -15,6 +15,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
   const [submitting, setSubmitting] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
   
+  // Comment Editing State
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+
   // Initialize state with safe defaults
   const likes = post.likes || [];
   const currentUid = currentUser?.uid || auth.currentUser?.uid;
@@ -128,6 +132,35 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
     }
   };
 
+  const handleDeleteComment = async (commentId: string) => {
+    if (!confirm("정말 이 댓글을 삭제하시겠습니까?")) return;
+    try {
+      await deleteDoc(doc(db, 'posts', post.id, 'comments', commentId));
+    } catch (err: any) {
+      console.error("Error deleting comment:", err);
+      alert("댓글 삭제 실패: " + err.message);
+    }
+  };
+
+  const handleUpdateComment = async (commentId: string) => {
+    if (!editText.trim()) return;
+    try {
+      await updateDoc(doc(db, 'posts', post.id, 'comments', commentId), {
+        text: editText
+      });
+      setEditingCommentId(null);
+      setEditText('');
+    } catch (err: any) {
+      console.error("Error updating comment:", err);
+      alert("댓글 수정 실패: " + err.message);
+    }
+  };
+
+  const startEditing = (comment: Comment) => {
+    setEditingCommentId(comment.id);
+    setEditText(comment.text);
+  };
+
   const formatTime = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('ko-KR');
   };
@@ -211,15 +244,64 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser }) => {
 
             {comments.length > 0 ? (
                 comments.map((comment) => (
-                    <div key={comment.id} className="mb-3 flex gap-2">
+                    <div key={comment.id} className="mb-3 flex gap-2 group">
                         <img 
                             src={comment.authorPhoto || `https://ui-avatars.com/api/?name=${comment.authorName}`} 
                             className="w-6 h-6 rounded-full mt-1 object-cover"
                             alt={comment.authorName}
                         />
-                        <div className="bg-white p-2.5 rounded-lg shadow-sm flex-1">
-                            <span className="font-bold text-xs block text-gray-800 mb-1">{comment.authorName}</span>
-                            <p className="text-sm text-gray-700 break-words">{comment.text}</p>
+                        <div className="bg-white p-2.5 rounded-lg shadow-sm flex-1 relative">
+                            {editingCommentId === comment.id ? (
+                                <div className="flex flex-col gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={editText}
+                                        onChange={(e) => setEditText(e.target.value)}
+                                        className="w-full text-sm border border-gray-300 rounded p-1 focus:ring-1 focus:ring-amber-500 outline-none"
+                                        autoFocus
+                                    />
+                                    <div className="flex justify-end gap-2 text-xs">
+                                        <button 
+                                            onClick={() => setEditingCommentId(null)} 
+                                            className="text-gray-500 hover:text-gray-700"
+                                        >
+                                            취소
+                                        </button>
+                                        <button 
+                                            onClick={() => handleUpdateComment(comment.id)} 
+                                            className="text-amber-600 font-bold hover:text-amber-700"
+                                        >
+                                            저장
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex justify-between items-start">
+                                        <span className="font-bold text-xs block text-gray-800 mb-1">{comment.authorName}</span>
+                                        {/* Edit/Delete Buttons for Author */}
+                                        {currentUser?.uid === comment.uid && (
+                                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button 
+                                                    onClick={() => startEditing(comment)} 
+                                                    className="text-gray-400 hover:text-amber-600 text-xs p-1"
+                                                    title="수정"
+                                                >
+                                                    <i className="fa-solid fa-pen"></i>
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleDeleteComment(comment.id)} 
+                                                    className="text-gray-400 hover:text-red-500 text-xs p-1"
+                                                    title="삭제"
+                                                >
+                                                    <i className="fa-solid fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p className="text-sm text-gray-700 break-words">{comment.text}</p>
+                                </>
+                            )}
                         </div>
                     </div>
                 ))
