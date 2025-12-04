@@ -7,9 +7,10 @@ interface PostCardProps {
   post: Post;
   currentUser: UserProfile | null;
   onEdit?: (post: Post) => void;
+  onUserClick?: (uid: string) => void;
 }
 
-const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit }) => {
+const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit, onUserClick }) => {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -166,11 +167,20 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit }) => {
     return new Date(timestamp).toLocaleDateString('ko-KR');
   };
 
+  const handleUserClick = () => {
+    if (onUserClick) {
+      onUserClick(post.uid);
+    }
+  };
+
   return (
     <article className="bg-white border border-gray-200 rounded-lg mb-6 shadow-sm overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-3">
+        <div 
+          className={`flex items-center gap-3 ${onUserClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+          onClick={handleUserClick}
+        >
           <img 
             src={post.authorPhoto || `https://ui-avatars.com/api/?name=${post.authorName}&background=random`} 
             alt={post.authorName} 
@@ -255,8 +265,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit }) => {
                     <div key={comment.id} className="mb-3 flex gap-2 group">
                         <img 
                             src={comment.authorPhoto || `https://ui-avatars.com/api/?name=${comment.authorName}`} 
-                            className="w-6 h-6 rounded-full mt-1 object-cover"
+                            className="w-6 h-6 rounded-full mt-1 object-cover cursor-pointer"
                             alt={comment.authorName}
+                            onClick={() => onUserClick && onUserClick(comment.uid)}
                         />
                         <div className="bg-white p-2.5 rounded-lg shadow-sm flex-1 relative">
                             {editingCommentId === comment.id ? (
@@ -286,7 +297,12 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit }) => {
                             ) : (
                                 <>
                                     <div className="flex justify-between items-start">
-                                        <span className="font-bold text-xs block text-gray-800 mb-1">{comment.authorName}</span>
+                                        <span 
+                                          className={`font-bold text-xs block text-gray-800 mb-1 ${onUserClick ? 'cursor-pointer hover:underline' : ''}`}
+                                          onClick={() => onUserClick && onUserClick(comment.uid)}
+                                        >
+                                          {comment.authorName}
+                                        </span>
                                         {/* Edit/Delete Buttons for Author */}
                                         {currentUser?.uid === comment.uid && (
                                             <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -5,6 +5,7 @@ import { collection, query, orderBy, onSnapshot, setDoc, doc, getDoc, where, upd
 import { UserProfile, Post, FeedType } from './types';
 import PostCard from './components/PostCard';
 import CreatePostModal from './components/CreatePostModal';
+import UserProfilePage from './components/UserProfilePage';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -13,6 +14,10 @@ const App: React.FC = () => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Navigation State
+  const [view, setView] = useState<'home' | 'profile'>('home');
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
   
   // Track which post is being edited
   const [editingPost, setEditingPost] = useState<Post | null>(null);
@@ -69,8 +74,10 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Fetch Posts
+  // Fetch Posts (Only when in Home view)
   useEffect(() => {
+    if (view !== 'home') return;
+
     let q;
     const postsRef = collection(db, 'posts');
     q = query(postsRef, orderBy('createdAt', 'desc'));
@@ -91,7 +98,7 @@ const App: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [feedType, user]);
+  }, [feedType, user, view]);
 
   const handleLogin = async () => {
     try {
@@ -104,6 +111,7 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     await signOut(auth);
     setFeedType(FeedType.GLOBAL);
+    setView('home');
   };
 
   const handleEditPost = (post: Post) => {
@@ -114,6 +122,19 @@ const App: React.FC = () => {
   const handleCloseModal = () => {
     setIsCreateModalOpen(false);
     setEditingPost(null);
+  };
+
+  // Navigation handlers
+  const navigateToProfile = (uid: string) => {
+    setProfileUserId(uid);
+    setView('profile');
+    window.scrollTo(0, 0);
+  };
+
+  const navigateToHome = () => {
+    setView('home');
+    setProfileUserId(null);
+    window.scrollTo(0, 0);
   };
 
   if (loading) {
@@ -128,7 +149,7 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col md:flex-row max-w-7xl mx-auto bg-gray-50">
       {/* Sidebar (Desktop) / Topbar (Mobile) */}
       <aside className="md:w-64 bg-white border-r border-gray-200 md:h-screen md:sticky md:top-0 z-20">
-        <div className="p-6 flex items-center gap-3">
+        <div className="p-6 flex items-center gap-3 cursor-pointer" onClick={navigateToHome}>
           <div className="w-8 h-8 bg-amber-600 rounded-lg flex items-center justify-center text-white">
             <i className="fa-solid fa-bookmark"></i>
           </div>
@@ -137,8 +158,11 @@ const App: React.FC = () => {
 
         <nav className="flex md:flex-col gap-2 p-4 md:p-6 overflow-x-auto no-scrollbar md:overflow-visible sticky top-0 bg-white border-b md:border-0 border-gray-200">
           <button 
-            onClick={() => setFeedType(FeedType.GLOBAL)}
-            className={`flex items-center gap-4 px-4 py-3 rounded-full transition-all ${feedType === FeedType.GLOBAL ? 'bg-amber-50 text-amber-900 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}
+            onClick={() => {
+              setFeedType(FeedType.GLOBAL);
+              navigateToHome();
+            }}
+            className={`flex items-center gap-4 px-4 py-3 rounded-full transition-all ${view === 'home' && feedType === FeedType.GLOBAL ? 'bg-amber-50 text-amber-900 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}
           >
             <i className="fa-solid fa-globe text-lg w-6"></i>
             <span className="hidden md:inline">탐색</span>
@@ -146,8 +170,11 @@ const App: React.FC = () => {
           
           {user && (
             <button 
-              onClick={() => setFeedType(FeedType.FOLLOWING)}
-              className={`flex items-center gap-4 px-4 py-3 rounded-full transition-all ${feedType === FeedType.FOLLOWING ? 'bg-amber-50 text-amber-900 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}
+              onClick={() => {
+                setFeedType(FeedType.FOLLOWING);
+                navigateToHome();
+              }}
+              className={`flex items-center gap-4 px-4 py-3 rounded-full transition-all ${view === 'home' && feedType === FeedType.FOLLOWING ? 'bg-amber-50 text-amber-900 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}
             >
               <i className="fa-solid fa-user-group text-lg w-6"></i>
               <span className="hidden md:inline">팔로잉</span>
@@ -156,14 +183,22 @@ const App: React.FC = () => {
 
           <div className="md:mt-auto pt-4 md:border-t border-gray-100 mt-0 ml-auto md:ml-0 flex md:block">
             {user ? (
-               <div className="flex items-center gap-3 px-2">
-                 <img src={user.photoURL || ''} alt="Me" className="w-8 h-8 rounded-full border border-gray-300" />
+               <div className="flex items-center gap-3 px-2 group cursor-pointer" onClick={() => navigateToProfile(user.uid)}>
+                 <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} alt="Me" className="w-8 h-8 rounded-full border border-gray-300 object-cover" />
                  <div className="hidden md:block">
-                    <p className="text-sm font-bold text-gray-900 truncate w-32">{user.displayName || 'User'}</p>
-                    <button onClick={handleLogout} className="text-xs text-red-500 hover:underline">로그아웃</button>
+                    <p className="text-sm font-bold text-gray-900 truncate w-32 group-hover:text-amber-600 transition-colors">{user.displayName || 'User'}</p>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleLogout(); }} 
+                      className="text-xs text-red-500 hover:underline"
+                    >
+                      로그아웃
+                    </button>
                  </div>
                  {/* Mobile Logout Icon */}
-                 <button onClick={handleLogout} className="md:hidden text-gray-500 ml-2">
+                 <button 
+                    onClick={(e) => { e.stopPropagation(); handleLogout(); }} 
+                    className="md:hidden text-gray-500 ml-2"
+                 >
                     <i className="fa-solid fa-arrow-right-from-bracket"></i>
                  </button>
                </div>
@@ -179,54 +214,67 @@ const App: React.FC = () => {
         </nav>
       </aside>
 
-      {/* Main Feed */}
+      {/* Main Content Area */}
       <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
-         <header className="flex justify-between items-center mb-8">
-            <div>
-                <h2 className="text-xl font-bold text-gray-900">
-                    {feedType === FeedType.GLOBAL ? '추천 피드' : '팔로잉 피드'}
-                </h2>
-                <p className="text-gray-500 text-sm">
-                    {feedType === FeedType.GLOBAL ? '커뮤니티의 최신 독서 기록' : '친구들이 읽고 있는 책'}
-                </p>
-            </div>
-            {/* Create Button (Desktop/Header) */}
-            {user && (
-                <button 
-                    onClick={() => { setEditingPost(null); setIsCreateModalOpen(true); }}
-                    className="hidden md:flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 transition shadow-sm"
-                >
-                    <i className="fa-solid fa-feather"></i>
-                    새 글 쓰기
-                </button>
-            )}
-         </header>
-
-         {error ? (
-             <div className="bg-red-50 text-red-700 p-4 rounded-lg text-center">
-                 <i className="fa-solid fa-triangle-exclamation mb-2 text-2xl"></i>
-                 <p>{error}</p>
-             </div>
-         ) : (
-             <div className="space-y-6">
-                {posts.length === 0 ? (
-                    <div className="text-center py-20">
-                        <div className="text-gray-300 text-6xl mb-4">
-                            <i className="fa-solid fa-book-open"></i>
-                        </div>
-                        <p className="text-gray-500">아직 게시물이 없습니다. 첫 번째 책을 공유해보세요!</p>
-                    </div>
-                ) : (
-                    posts.map(post => (
-                        <PostCard 
-                            key={post.id} 
-                            post={post} 
-                            currentUser={user} 
-                            onEdit={handleEditPost} 
-                        />
-                    ))
+         {view === 'home' ? (
+           <>
+             <header className="flex justify-between items-center mb-8">
+                <div>
+                    <h2 className="text-xl font-bold text-gray-900">
+                        {feedType === FeedType.GLOBAL ? '추천 피드' : '팔로잉 피드'}
+                    </h2>
+                    <p className="text-gray-500 text-sm">
+                        {feedType === FeedType.GLOBAL ? '커뮤니티의 최신 독서 기록' : '친구들이 읽고 있는 책'}
+                    </p>
+                </div>
+                {/* Create Button (Desktop/Header) */}
+                {user && (
+                    <button 
+                        onClick={() => { setEditingPost(null); setIsCreateModalOpen(true); }}
+                        className="hidden md:flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 transition shadow-sm"
+                    >
+                        <i className="fa-solid fa-feather"></i>
+                        새 글 쓰기
+                    </button>
                 )}
-             </div>
+             </header>
+
+             {error ? (
+                 <div className="bg-red-50 text-red-700 p-4 rounded-lg text-center">
+                     <i className="fa-solid fa-triangle-exclamation mb-2 text-2xl"></i>
+                     <p>{error}</p>
+                 </div>
+             ) : (
+                 <div className="space-y-6">
+                    {posts.length === 0 ? (
+                        <div className="text-center py-20">
+                            <div className="text-gray-300 text-6xl mb-4">
+                                <i className="fa-solid fa-book-open"></i>
+                            </div>
+                            <p className="text-gray-500">아직 게시물이 없습니다. 첫 번째 책을 공유해보세요!</p>
+                        </div>
+                    ) : (
+                        posts.map(post => (
+                            <PostCard 
+                                key={post.id} 
+                                post={post} 
+                                currentUser={user} 
+                                onEdit={handleEditPost}
+                                onUserClick={navigateToProfile}
+                            />
+                        ))
+                    )}
+                 </div>
+             )}
+           </>
+         ) : (
+           <UserProfilePage 
+             userId={profileUserId!} 
+             currentUser={user}
+             onBack={navigateToHome}
+             onEditPost={handleEditPost}
+             onUserClick={navigateToProfile}
+           />
          )}
       </main>
 
@@ -255,7 +303,7 @@ const App: React.FC = () => {
       </aside>
 
       {/* Mobile Floating Action Button */}
-      {user && (
+      {user && view === 'home' && (
         <button 
             onClick={() => { setEditingPost(null); setIsCreateModalOpen(true); }}
             className="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-amber-600 text-white rounded-full shadow-lg flex items-center justify-center text-xl z-30 hover:bg-amber-700 active:scale-95 transition-all"
