@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+
+    // Check if the user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Check if the user ID matches the authenticated user's ID
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Check if the user owns the document being acted upon (based on 'uid' field)
+    function isResourceOwner() {
+      return isSignedIn() && request.auth.uid == resource.data.uid;
+    }
+
+    // --- Rules ---
+
+    // Users Collection
+    match /users/{userId} {
+      // Public Read: Anyone can view profiles
+      allow read: if true;
+      
+      // Create: Users can only create their own profile
+      allow create: if isOwner(userId);
+      
+      // Update: 
+      // 1. The user owns the profile (changing bio, photo, etc.) OR
+      // 2. Another user is updating the 'followers' list (Follow/Unfollow action)
+      allow update: if isSignedIn() && (
+        isOwner(userId) || 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers'])
+      );
+    }
+
+    // Posts Collection
+    match /posts/{postId} {
+      // Public Read
+      allow read: if true;
+
+      // Create: Must be signed in, and the post's 'uid' must match the user
+      allow create: if isSignedIn() && isOwner(request.resource.data.uid);
+
+      // Update:
+      // 1. The author updates the content (review, quote, etc.) OR
+      // 2. Any logged-in user updates the 'likes' array (Liking a post)
+      allow update: if isSignedIn() && (
+        isResourceOwner() || 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
+      );
+
+      // Delete: Only the author can delete
+      allow delete: if isResourceOwner();
+
+      // Comments Subcollection
+      match /comments/{commentId} {
+        // Public Read
+        allow read: if true;
+
+        // Create: Must be signed in, and comment 'uid' must match user
+        allow create: if isSignedIn() && isOwner(request.resource.data.uid);
+
+        // Update/Delete: Only the comment author can modify/delete
+        allow update, delete: if isResourceOwner();
+      }
+    }
+  }
+}

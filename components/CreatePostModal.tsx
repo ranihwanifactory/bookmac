@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { db, auth } from '../firebase';
-import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { UserProfile, Post } from '../types';
 import { generateBookContent } from '../services/geminiService';
 
@@ -8,9 +8,10 @@ interface CreatePostModalProps {
   currentUser: UserProfile;
   onClose: () => void;
   postToEdit?: Post | null; // Optional prop for edit mode
+  onPostSaved?: (post: Post, isEdit: boolean) => void;
 }
 
-const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose, postToEdit }) => {
+const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose, postToEdit, onPostSaved }) => {
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   
@@ -63,8 +64,6 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose,
         quote,
         review,
         rating,
-        // Update timestamp only on creation, or add updatedAt for edits if desired. 
-        // For now keeping original createdAt for edits to maintain order, or we could update it.
         ...(isEditMode ? {} : { 
             uid: uid,
             authorName: currentUser.displayName || '익명', 
@@ -74,15 +73,24 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose,
         })
       };
 
+      let finalPost: Post;
+
       if (isEditMode && postToEdit) {
         // Update existing doc
         const postRef = doc(db, 'posts', postToEdit.id);
         await updateDoc(postRef, postData);
+        finalPost = { ...postToEdit, ...postData } as Post;
       } else {
         // Create new doc
-        await addDoc(collection(db, 'posts'), postData as any);
+        const docRef = await addDoc(collection(db, 'posts'), postData as any);
+        // We need the ID
+        finalPost = { id: docRef.id, ...postData } as Post;
       }
       
+      if (onPostSaved) {
+          onPostSaved(finalPost, isEditMode);
+      }
+
       onClose();
     } catch (error) {
       console.error("Error saving post", error);

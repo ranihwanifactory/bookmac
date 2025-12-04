@@ -8,9 +8,10 @@ interface PostCardProps {
   currentUser: UserProfile | null;
   onEdit?: (post: Post) => void;
   onUserClick?: (uid: string) => void;
+  onDelete?: (postId: string) => void;
 }
 
-const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit, onUserClick }) => {
+const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit, onUserClick, onDelete }) => {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -92,6 +93,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit, onUserCl
     if (!confirm("이 게시물을 삭제하시겠습니까?")) return;
     try {
         await deleteDoc(doc(db, 'posts', post.id));
+        if (onDelete) {
+            onDelete(post.id);
+        }
     } catch (e) {
         console.error("Error deleting post", e);
         alert("삭제 중 오류가 발생했습니다.");

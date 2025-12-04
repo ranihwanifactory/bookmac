@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../firebase';
-import { doc, getDoc, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, orderBy, getDocs, writeBatch, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { UserProfile, Post } from '../types';
 import PostCard from './PostCard';
 import EditProfileModal from './EditProfileModal';
@@ -18,8 +18,10 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, currentUser, 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
 
   const isOwnProfile = currentUser?.uid === userId;
+  const isFollowing = profile?.followers?.includes(currentUser?.uid || '');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -31,14 +33,11 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, currentUser, 
         if (userSnap.exists()) {
           setProfile(userSnap.data() as UserProfile);
         } else {
-          // If user doc doesn't exist (e.g. legacy auth user), try to construct basic profile
-          // But usually we assume user doc exists.
           setProfile(null);
         }
 
         // Fetch User's Posts
         const postsRef = collection(db, 'posts');
-        // Requires index for uid + createdAt usually, but single field sort might work depending on query
         const q = query(postsRef, where('uid', '==', userId), orderBy('createdAt', 'desc'));
         
         const querySnapshot = await getDocs(q);
@@ -53,6 +52,48 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, currentUser, 
     
     fetchData();
   }, [userId]);
+
+  const handleFollowToggle = async () => {
+    if (!currentUser) return alert("로그인이 필요합니다.");
+    if (!profile) return;
+    
+    setFollowLoading(true);
+    try {
+        const batch = writeBatch(db);
+        const currentUserRef = doc(db, 'users', currentUser.uid);
+        const targetUserRef = doc(db, 'users', userId);
+
+        if (isFollowing) {
+            // Unfollow
+            batch.update(currentUserRef, { following: arrayRemove(userId) });
+            batch.update(targetUserRef, { followers: arrayRemove(currentUser.uid) });
+            
+            // Optimistic Update
+            setProfile(prev => prev ? ({
+                ...prev,
+                followers: prev.followers.filter(uid => uid !== currentUser.uid)
+            }) : null);
+        } else {
+            // Follow
+            batch.update(currentUserRef, { following: arrayUnion(userId) });
+            batch.update(targetUserRef, { followers: arrayUnion(currentUser.uid) });
+
+             // Optimistic Update
+             setProfile(prev => prev ? ({
+                ...prev,
+                followers: [...prev.followers, currentUser.uid]
+            }) : null);
+        }
+
+        await batch.commit();
+
+    } catch (error) {
+        console.error("Error toggling follow:", error);
+        alert("작업을 처리하는 중 오류가 발생했습니다.");
+    } finally {
+        setFollowLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -110,12 +151,34 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, currentUser, 
           <div className="flex-1 text-center md:text-left">
             <div className="flex flex-col md:flex-row md:items-center gap-2 mb-2 justify-center md:justify-start">
                 <h1 className="text-2xl font-bold text-gray-900">{profile.displayName}</h1>
-                {isOwnProfile && (
+                {isOwnProfile ? (
                     <button 
                         onClick={() => setIsEditModalOpen(true)}
                         className="hidden md:flex items-center gap-1.5 px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-full text-xs font-medium text-gray-700 transition-colors"
                     >
                         <i className="fa-solid fa-pen"></i> 수정
+                    </button>
+                ) : (
+                    <button
+                        onClick={handleFollowToggle}
+                        disabled={followLoading || !currentUser}
+                        className={`hidden md:flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition-colors shadow-sm
+                            ${isFollowing 
+                                ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' 
+                                : 'bg-black text-white hover:bg-gray-800'
+                            }`}
+                    >
+                       {followLoading ? (
+                           <i className="fa-solid fa-spinner fa-spin"></i>
+                       ) : isFollowing ? (
+                           <>
+                               <i className="fa-solid fa-check"></i> 팔로잉
+                           </>
+                       ) : (
+                           <>
+                               <i className="fa-solid fa-plus"></i> 팔로우
+                           </>
+                       )}
                     </button>
                 )}
             </div>
@@ -138,6 +201,23 @@ const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, currentUser, 
                 <span className="text-xs text-gray-500 uppercase tracking-wide">팔로잉</span>
               </div>
             </div>
+
+            {/* Mobile Action Button */}
+            {!isOwnProfile && (
+                <div className="md:hidden mt-6">
+                    <button
+                        onClick={handleFollowToggle}
+                        disabled={followLoading || !currentUser}
+                        className={`w-full py-2 rounded-lg font-bold text-sm transition-colors
+                            ${isFollowing 
+                                ? 'bg-white border border-gray-300 text-gray-700' 
+                                : 'bg-black text-white'
+                            }`}
+                    >
+                       {followLoading ? <i className="fa-solid fa-spinner fa-spin"></i> : (isFollowing ? '팔로잉' : '팔로우 하기')}
+                    </button>
+                </div>
+            )}
           </div>
         </div>
       </div>

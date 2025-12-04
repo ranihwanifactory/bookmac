@@ -1,20 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { auth, googleProvider, db } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, orderBy, onSnapshot, setDoc, doc, getDoc, where, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, setDoc, doc, getDoc, where, updateDoc, arrayUnion, arrayRemove, getDocs, limit, startAfter, DocumentSnapshot } from 'firebase/firestore';
 import { UserProfile, Post, FeedType } from './types';
 import PostCard from './components/PostCard';
 import CreatePostModal from './components/CreatePostModal';
 import UserProfilePage from './components/UserProfilePage';
 
+const POSTS_PER_PAGE = 5;
+
 const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  
   const [feedType, setFeedType] = useState<FeedType>(FeedType.GLOBAL);
   const [posts, setPosts] = useState<Post[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
+  // Pagination State
+  const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loaderRef = useRef<HTMLDivElement>(null);
+
   // Navigation State
   const [view, setView] = useState<'home' | 'profile'>('home');
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
@@ -24,26 +34,20 @@ const App: React.FC = () => {
   
   // Auth State Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubscribeUserDoc: () => void;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (unsubscribeUserDoc) unsubscribeUserDoc(); // Clean up previous listener
+
       if (firebaseUser && firebaseUser.uid) {
-        // Fetch or create user profile in Firestore
         const userRef = doc(db, 'users', firebaseUser.uid);
+        
         try {
+          // Check if doc exists first to handle creation
           const userSnap = await getDoc(userRef);
 
-          if (userSnap.exists()) {
-            const userData = userSnap.data();
-            setUser({
-              uid: firebaseUser.uid, 
-              displayName: userData.displayName || firebaseUser.displayName || 'User',
-              email: userData.email || firebaseUser.email || null,
-              photoURL: userData.photoURL || firebaseUser.photoURL || null,
-              followers: userData.followers || [],
-              following: userData.following || [],
-              bio: userData.bio || ''
-            });
-          } else {
-            const newUser: UserProfile = {
+          if (!userSnap.exists()) {
+             const newUser: UserProfile = {
               uid: firebaseUser.uid,
               displayName: firebaseUser.displayName || 'User',
               email: firebaseUser.email || null,
@@ -52,11 +56,27 @@ const App: React.FC = () => {
               following: []
             };
             await setDoc(userRef, newUser);
-            setUser(newUser);
           }
+
+          // Real-time listener for user profile
+          unsubscribeUserDoc = onSnapshot(userRef, (docSnap) => {
+             if (docSnap.exists()) {
+                const userData = docSnap.data();
+                setUser({
+                  uid: firebaseUser.uid, 
+                  displayName: userData.displayName || firebaseUser.displayName || 'User',
+                  email: userData.email || firebaseUser.email || null,
+                  photoURL: userData.photoURL || firebaseUser.photoURL || null,
+                  followers: userData.followers || [],
+                  following: userData.following || [],
+                  bio: userData.bio || ''
+                });
+             }
+          });
+
         } catch (error) {
-          console.error("Error fetching user profile:", error);
-          // Fallback to basic auth info if firestore fails
+          console.error("Error setting up user profile:", error);
+          // Fallback
            setUser({
               uid: firebaseUser.uid,
               displayName: firebaseUser.displayName || 'User',
@@ -69,36 +89,95 @@ const App: React.FC = () => {
       } else {
         setUser(null);
       }
-      setLoading(false);
+      setAuthLoading(false);
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeUserDoc) unsubscribeUserDoc();
+    };
   }, []);
 
-  // Fetch Posts (Only when in Home view)
-  useEffect(() => {
+  const fetchPosts = async (isInitial = false) => {
+    if (!hasMore && !isInitial) return;
     if (view !== 'home') return;
+    
+    // For FOLLOWING feed, if user not logged in or following no one, empty.
+    if (feedType === FeedType.FOLLOWING && (!user || user.following.length === 0)) {
+        setPosts([]);
+        setHasMore(false);
+        setPostsLoading(false);
+        return;
+    }
 
-    let q;
-    const postsRef = collection(db, 'posts');
-    q = query(postsRef, orderBy('createdAt', 'desc'));
+    if (isInitial) setPostsLoading(true);
+    else setLoadingMore(true);
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const allPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
-      
-      if (feedType === FeedType.FOLLOWING && user) {
-        const followingPosts = allPosts.filter(p => user.following.includes(p.uid) || p.uid === user.uid);
-        setPosts(followingPosts);
-      } else {
-        setPosts(allPosts);
-      }
-      setError(null);
-    }, (err) => {
+    try {
+        let q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
+
+        if (feedType === FeedType.FOLLOWING && user) {
+            // Firestore limit for 'in' is 30. We take the most recent 30 followed users.
+            // If user follows > 30, this simple implementation won't show posts from older follows.
+            // A more complex solution would require separate collection fan-out or client-side merge.
+            const followingSlice = user.following.slice(0, 30);
+            if (followingSlice.length > 0) {
+                q = query(q, where('uid', 'in', followingSlice));
+            }
+        }
+
+        q = query(q, limit(POSTS_PER_PAGE));
+
+        if (!isInitial && lastDoc) {
+            q = query(q, startAfter(lastDoc));
+        }
+
+        const snapshot = await getDocs(q);
+        const newPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+
+        if (isInitial) {
+            setPosts(newPosts);
+        } else {
+            setPosts(prev => [...prev, ...newPosts]);
+        }
+
+        setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
+        setHasMore(snapshot.docs.length === POSTS_PER_PAGE);
+
+    } catch (err: any) {
         console.error("Error fetching posts:", err);
         setError("게시물을 불러올 수 없습니다. 권한 설정을 확인해주세요.");
-    });
+    } finally {
+        if (isInitial) setPostsLoading(false);
+        else setLoadingMore(false);
+    }
+  };
 
-    return () => unsubscribe();
-  }, [feedType, user, view]);
+  // Reset and Fetch Initial Posts when FeedType or User changes
+  useEffect(() => {
+    if (view === 'home' && !authLoading) {
+        setPosts([]);
+        setLastDoc(null);
+        setHasMore(true);
+        fetchPosts(true);
+    }
+  }, [feedType, user?.uid, view, authLoading]);
+
+  // Intersection Observer for Infinite Scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !postsLoading) {
+            fetchPosts(false);
+        }
+    }, { threshold: 1.0 });
+
+    if (loaderRef.current) {
+        observer.observe(loaderRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, postsLoading, lastDoc, feedType]);
+
 
   const handleLogin = async () => {
     try {
@@ -124,6 +203,20 @@ const App: React.FC = () => {
     setEditingPost(null);
   };
 
+  const handlePostSaved = (savedPost: Post, isEdit: boolean) => {
+    setPosts(prev => {
+        if (isEdit) {
+            return prev.map(p => p.id === savedPost.id ? savedPost : p);
+        } else {
+            return [savedPost, ...prev];
+        }
+    });
+  };
+
+  const handleDeletePostState = (postId: string) => {
+      setPosts(prev => prev.filter(p => p.id !== postId));
+  };
+
   // Navigation handlers
   const navigateToProfile = (uid: string) => {
     setProfileUserId(uid);
@@ -137,7 +230,7 @@ const App: React.FC = () => {
     window.scrollTo(0, 0);
   };
 
-  if (loading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <i className="fa-solid fa-book-open fa-bounce text-4xl text-amber-600"></i>
@@ -246,12 +339,14 @@ const App: React.FC = () => {
                  </div>
              ) : (
                  <div className="space-y-6">
-                    {posts.length === 0 ? (
+                    {posts.length === 0 && !postsLoading ? (
                         <div className="text-center py-20">
                             <div className="text-gray-300 text-6xl mb-4">
                                 <i className="fa-solid fa-book-open"></i>
                             </div>
-                            <p className="text-gray-500">아직 게시물이 없습니다. 첫 번째 책을 공유해보세요!</p>
+                            <p className="text-gray-500">
+                                {feedType === FeedType.FOLLOWING ? '팔로우한 친구들의 게시물이 없습니다.' : '아직 게시물이 없습니다. 첫 번째 책을 공유해보세요!'}
+                            </p>
                         </div>
                     ) : (
                         posts.map(post => (
@@ -261,8 +356,22 @@ const App: React.FC = () => {
                                 currentUser={user} 
                                 onEdit={handleEditPost}
                                 onUserClick={navigateToProfile}
+                                onDelete={handleDeletePostState}
                             />
                         ))
+                    )}
+
+                    {/* Infinite Scroll Sentinel / Loader */}
+                    {(hasMore || loadingMore || postsLoading) && (
+                        <div ref={loaderRef} className="py-8 flex justify-center">
+                            <i className="fa-solid fa-spinner fa-spin text-2xl text-gray-400"></i>
+                        </div>
+                    )}
+                    
+                    {!hasMore && posts.length > 0 && (
+                        <div className="text-center py-8 text-gray-400 text-sm">
+                            모든 게시물을 불러왔습니다.
+                        </div>
                     )}
                  </div>
              )}
@@ -318,6 +427,7 @@ const App: React.FC = () => {
             currentUser={user} 
             onClose={handleCloseModal} 
             postToEdit={editingPost}
+            onPostSaved={handlePostSaved}
           />
       )}
     </div>
