@@ -253,7 +253,7 @@ const App: React.FC = () => {
           <div className="w-8 h-8 bg-amber-600 rounded-lg flex items-center justify-center text-white">
             <i className="fa-solid fa-bookmark"></i>
           </div>
-          <h1 className="text-2xl font-serif font-bold text-gray-900 tracking-tight">BookMac</h1>
+          <h1 className="text-2xl font-serif font-bold text-gray-900 tracking-tight">북맥</h1>
         </div>
 
         <nav className="flex md:flex-col gap-2 p-4 md:p-6 overflow-x-auto no-scrollbar md:overflow-visible sticky top-0 bg-white border-b md:border-0 border-gray-200">
@@ -429,7 +429,7 @@ const App: React.FC = () => {
          </div>
          <div className="p-4 bg-gray-100 rounded-xl">
             <p className="text-xs text-gray-500 leading-relaxed">
-                BookMac © 2024<br/>
+                북맥 © 2024<br/>
                 한 페이지씩, 당신의 독서 여정을 공유하세요.
             </p>
          </div>
