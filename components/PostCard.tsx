@@ -211,7 +211,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit, onUserCl
 
       {/* Book Content */}
       <div className="px-4 pb-2">
-        <div className="flex gap-4 mb-4 bg-amber-50 p-4 rounded-lg items-start">
+        <div className="flex gap-4 mb-4 bg-amber-50 p-4 rounded-lg items-start relative">
            <img 
               src={post.coverImage || 'https://via.placeholder.com/150'} 
               alt={post.bookTitle}
@@ -227,6 +227,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit, onUserCl
                     ))}
                 </div>
             </div>
+            
+            {/* Location Tag in Post */}
+            {post.location && (
+                <div className="absolute top-4 right-4 text-xs text-gray-400 flex items-center gap-1 bg-white bg-opacity-80 px-2 py-1 rounded-full shadow-sm">
+                    <i className="fa-solid fa-location-dot text-red-400"></i>
+                    <span>{post.location.name}</span>
+                </div>
+            )}
         </div>
 
         {post.quote && (

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { db, auth } from '../firebase';
 import { collection, addDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { UserProfile, Post } from '../types';
-import { generateBookContent } from '../services/geminiService';
+import { generateBookContent, identifyLocation } from '../services/geminiService';
 
 interface CreatePostModalProps {
   currentUser: UserProfile;
@@ -14,6 +14,7 @@ interface CreatePostModalProps {
 const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose, postToEdit, onPostSaved }) => {
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
   
   // Initialize state with postToEdit data if available
   const [title, setTitle] = useState(postToEdit?.bookTitle || '');
@@ -22,6 +23,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose,
   const [review, setReview] = useState(postToEdit?.review || '');
   const [rating, setRating] = useState(postToEdit?.rating || 5);
   const [coverUrl, setCoverUrl] = useState(postToEdit?.coverImage || '');
+  const [location, setLocation] = useState<{lat: number, lng: number, name: string} | undefined>(postToEdit?.location);
 
   const isEditMode = !!postToEdit;
 
@@ -41,6 +43,30 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose,
     } else {
       alert("AI가 내용을 생성하지 못했습니다. 다시 시도하거나 직접 작성해주세요.");
     }
+  };
+
+  const handleAddLocation = () => {
+    if (!navigator.geolocation) {
+        alert("브라우저가 위치 정보를 지원하지 않습니다.");
+        return;
+    }
+
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        const { latitude, longitude } = position.coords;
+        const name = await identifyLocation(latitude, longitude);
+        
+        setLocation({
+            lat: latitude,
+            lng: longitude,
+            name: name || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`
+        });
+        setLocationLoading(false);
+    }, (error) => {
+        console.error("Geolocation error:", error);
+        alert("위치 정보를 가져올 수 없습니다. 권한을 확인해주세요.");
+        setLocationLoading(false);
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,6 +90,7 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose,
         quote,
         review,
         rating,
+        location: location || null,
         ...(isEditMode ? {} : { 
             uid: uid,
             authorName: currentUser.displayName || '익명', 
@@ -173,6 +200,29 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose,
                 </button>
               ))}
             </div>
+          </div>
+
+          <div>
+             <label className="block text-xs font-medium text-gray-700 mb-1">위치 추가</label>
+             {location ? (
+                <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-lg text-sm text-gray-700">
+                    <i className="fa-solid fa-location-dot text-red-500"></i>
+                    <span className="flex-1 truncate">{location.name}</span>
+                    <button onClick={() => setLocation(undefined)} className="text-gray-400 hover:text-red-500 px-2">
+                        <i className="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+             ) : (
+                <button 
+                    type="button"
+                    onClick={handleAddLocation}
+                    disabled={locationLoading}
+                    className="flex items-center gap-2 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg transition-colors"
+                >
+                    {locationLoading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-location-crosshairs"></i>}
+                    현재 위치 추가 (Gemini Maps)
+                </button>
+             )}
           </div>
 
           <div>

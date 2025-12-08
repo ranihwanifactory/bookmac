@@ -33,6 +33,11 @@ export interface Post {
   likes: string[]; // Array of UIDs who liked
   createdAt: number;
   commentCount: number;
+  location?: {
+    lat: number;
+    lng: number;
+    name: string;
+  };
 }
 
 export enum FeedType {

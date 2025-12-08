@@ -1,5 +1,7 @@
 {
   "name": "BookMac",
   "description": "책 애호가들이 서평과 인용구를 공유하고 동료 독자들과 소통할 수 있는 소셜 네트워크입니다. AI 기반 콘텐츠 지원 기능을 제공합니다.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "geolocation"
+  ]
 }

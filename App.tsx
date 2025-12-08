@@ -6,6 +6,7 @@ import { UserProfile, Post, FeedType } from './types';
 import PostCard from './components/PostCard';
 import CreatePostModal from './components/CreatePostModal';
 import UserProfilePage from './components/UserProfilePage';
+import MapView from './components/MapView';
 
 const POSTS_PER_PAGE = 5;
 
@@ -28,6 +29,7 @@ const App: React.FC = () => {
   // Navigation State
   const [view, setView] = useState<'home' | 'profile'>('home');
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  const [isMapView, setIsMapView] = useState(false);
   
   // Track which post is being edited
   const [editingPost, setEditingPost] = useState<Post | null>(null);
@@ -126,6 +128,11 @@ const App: React.FC = () => {
             }
         }
 
+        // If Map View, we might want to fetch ALL recent posts with locations, 
+        // but for now let's stick to pagination or fetch a larger batch if in map view.
+        // To simplify, we use the same pagination. The map will show posts currently loaded in the list + others?
+        // Actually, infinite scroll works on the list. If we toggle to Map View, we probably want to see "loaded" posts.
+        // Let's keep fetching logic same for now.
         q = query(q, limit(POSTS_PER_PAGE));
 
         if (!isInitial && lastDoc) {
@@ -166,7 +173,7 @@ const App: React.FC = () => {
   // Intersection Observer for Infinite Scroll
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore && !postsLoading) {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !postsLoading && !isMapView) {
             fetchPosts(false);
         }
     }, { threshold: 1.0 });
@@ -176,7 +183,7 @@ const App: React.FC = () => {
     }
 
     return () => observer.disconnect();
-  }, [hasMore, loadingMore, postsLoading, lastDoc, feedType]);
+  }, [hasMore, loadingMore, postsLoading, lastDoc, feedType, isMapView]);
 
 
   const handleLogin = async () => {
@@ -320,16 +327,26 @@ const App: React.FC = () => {
                         {feedType === FeedType.GLOBAL ? '커뮤니티의 최신 독서 기록' : '친구들이 읽고 있는 책'}
                     </p>
                 </div>
-                {/* Create Button (Desktop/Header) */}
-                {user && (
+                <div className="flex items-center gap-2">
                     <button 
-                        onClick={() => { setEditingPost(null); setIsCreateModalOpen(true); }}
-                        className="hidden md:flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 transition shadow-sm"
+                        onClick={() => setIsMapView(!isMapView)}
+                        className={`p-2 rounded-lg transition-colors ${isMapView ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-gray-100'}`}
+                        title={isMapView ? "리스트 보기" : "지도 보기"}
                     >
-                        <i className="fa-solid fa-feather"></i>
-                        새 글 쓰기
+                        <i className={`fa-solid ${isMapView ? 'fa-list' : 'fa-map-location-dot'} text-lg`}></i>
                     </button>
-                )}
+
+                    {/* Create Button (Desktop/Header) */}
+                    {user && (
+                        <button 
+                            onClick={() => { setEditingPost(null); setIsCreateModalOpen(true); }}
+                            className="hidden md:flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 transition shadow-sm"
+                        >
+                            <i className="fa-solid fa-feather"></i>
+                            새 글 쓰기
+                        </button>
+                    )}
+                </div>
              </header>
 
              {error ? (
@@ -349,29 +366,36 @@ const App: React.FC = () => {
                             </p>
                         </div>
                     ) : (
-                        posts.map(post => (
-                            <PostCard 
-                                key={post.id} 
-                                post={post} 
-                                currentUser={user} 
-                                onEdit={handleEditPost}
-                                onUserClick={navigateToProfile}
-                                onDelete={handleDeletePostState}
-                            />
-                        ))
-                    )}
+                        <>
+                            {isMapView ? (
+                                <MapView posts={posts} />
+                            ) : (
+                                posts.map(post => (
+                                    <PostCard 
+                                        key={post.id} 
+                                        post={post} 
+                                        currentUser={user} 
+                                        onEdit={handleEditPost}
+                                        onUserClick={navigateToProfile}
+                                        onDelete={handleDeletePostState}
+                                    />
+                                ))
+                            )}
 
-                    {/* Infinite Scroll Sentinel / Loader */}
-                    {(hasMore || loadingMore || postsLoading) && (
-                        <div ref={loaderRef} className="py-8 flex justify-center">
-                            <i className="fa-solid fa-spinner fa-spin text-2xl text-gray-400"></i>
-                        </div>
-                    )}
-                    
-                    {!hasMore && posts.length > 0 && (
-                        <div className="text-center py-8 text-gray-400 text-sm">
-                            모든 게시물을 불러왔습니다.
-                        </div>
+                            {/* Infinite Scroll Sentinel / Loader */}
+                            {/* In Map View, we might hide this or change behavior, but keeping it simple for now */}
+                            {!isMapView && (hasMore || loadingMore || postsLoading) && (
+                                <div ref={loaderRef} className="py-8 flex justify-center">
+                                    <i className="fa-solid fa-spinner fa-spin text-2xl text-gray-400"></i>
+                                </div>
+                            )}
+                            
+                            {!hasMore && posts.length > 0 && !isMapView && (
+                                <div className="text-center py-8 text-gray-400 text-sm">
+                                    모든 게시물을 불러왔습니다.
+                                </div>
+                            )}
+                        </>
                     )}
                  </div>
              )}
