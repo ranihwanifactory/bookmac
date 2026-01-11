@@ -10,12 +10,20 @@ import MapView from './components/MapView';
 
 const POSTS_PER_PAGE = 5;
 
+interface RankedBook {
+  title: string;
+  author: string;
+  coverImage: string;
+  totalLikes: number;
+}
+
 const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   
   const [feedType, setFeedType] = useState<FeedType>(FeedType.GLOBAL);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [popularBooks, setPopularBooks] = useState<RankedBook[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -45,7 +53,6 @@ const App: React.FC = () => {
         const userRef = doc(db, 'users', firebaseUser.uid);
         
         try {
-          // Check if doc exists first to handle creation
           const userSnap = await getDoc(userRef);
 
           if (!userSnap.exists()) {
@@ -60,7 +67,6 @@ const App: React.FC = () => {
             await setDoc(userRef, newUser);
           }
 
-          // Real-time listener for user profile
           unsubscribeUserDoc = onSnapshot(userRef, (docSnap) => {
              if (docSnap.exists()) {
                 const userData = docSnap.data();
@@ -78,7 +84,6 @@ const App: React.FC = () => {
 
         } catch (error) {
           console.error("Error setting up user profile:", error);
-          // Fallback
            setUser({
               uid: firebaseUser.uid,
               displayName: firebaseUser.displayName || 'User',
@@ -104,7 +109,6 @@ const App: React.FC = () => {
     if (!hasMore && !isInitial) return;
     if (view !== 'home') return;
     
-    // For FOLLOWING feed, if user not logged in or following no one, empty.
     if (feedType === FeedType.FOLLOWING && (!user || user.following.length === 0)) {
         setPosts([]);
         setHasMore(false);
@@ -119,20 +123,12 @@ const App: React.FC = () => {
         let q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
 
         if (feedType === FeedType.FOLLOWING && user) {
-            // Firestore limit for 'in' is 30. We take the most recent 30 followed users.
-            // If user follows > 30, this simple implementation won't show posts from older follows.
-            // A more complex solution would require separate collection fan-out or client-side merge.
             const followingSlice = user.following.slice(0, 30);
             if (followingSlice.length > 0) {
                 q = query(q, where('uid', 'in', followingSlice));
             }
         }
 
-        // If Map View, we might want to fetch ALL recent posts with locations, 
-        // but for now let's stick to pagination or fetch a larger batch if in map view.
-        // To simplify, we use the same pagination. The map will show posts currently loaded in the list + others?
-        // Actually, infinite scroll works on the list. If we toggle to Map View, we probably want to see "loaded" posts.
-        // Let's keep fetching logic same for now.
         q = query(q, limit(POSTS_PER_PAGE));
 
         if (!isInitial && lastDoc) {
@@ -159,6 +155,46 @@ const App: React.FC = () => {
         else setLoadingMore(false);
     }
   };
+
+  // Fetch Popular Books Ranking
+  useEffect(() => {
+    const fetchPopular = async () => {
+      try {
+        const q = query(collection(db, 'posts'), orderBy('likeCount', 'desc'), limit(50));
+        const snapshot = await getDocs(q);
+        const allPosts = snapshot.docs.map(doc => doc.data() as Post);
+        
+        // Aggregate by book title
+        const bookMap: { [key: string]: RankedBook } = {};
+        
+        allPosts.forEach(post => {
+            const title = post.bookTitle.trim();
+            if (bookMap[title]) {
+                bookMap[title].totalLikes += (post.likes?.length || 0);
+            } else {
+                bookMap[title] = {
+                    title: title,
+                    author: post.bookAuthor,
+                    coverImage: post.coverImage,
+                    totalLikes: (post.likes?.length || 0)
+                };
+            }
+        });
+
+        const sorted = Object.values(bookMap)
+            .sort((a, b) => b.totalLikes - a.totalLikes)
+            .slice(0, 5);
+
+        setPopularBooks(sorted);
+      } catch (err) {
+        console.error("Error fetching popular books:", err);
+      }
+    };
+
+    if (!authLoading) {
+      fetchPopular();
+    }
+  }, [authLoading]);
 
   // Reset and Fetch Initial Posts when FeedType or User changes
   useEffect(() => {
@@ -294,7 +330,6 @@ const App: React.FC = () => {
                       로그아웃
                     </button>
                  </div>
-                 {/* Mobile Logout Icon */}
                  <button 
                     onClick={(e) => { e.stopPropagation(); handleLogout(); }} 
                     className="md:hidden text-gray-500 ml-2"
@@ -336,7 +371,6 @@ const App: React.FC = () => {
                         <i className={`fa-solid ${isMapView ? 'fa-list' : 'fa-map-location-dot'} text-lg`}></i>
                     </button>
 
-                    {/* Create Button (Desktop/Header) */}
                     {user && (
                         <button 
                             onClick={() => { setEditingPost(null); setIsCreateModalOpen(true); }}
@@ -382,8 +416,6 @@ const App: React.FC = () => {
                                 ))
                             )}
 
-                            {/* Infinite Scroll Sentinel / Loader */}
-                            {/* In Map View, we might hide this or change behavior, but keeping it simple for now */}
                             {!isMapView && (hasMore || loadingMore || postsLoading) && (
                                 <div ref={loaderRef} className="py-8 flex justify-center">
                                     <i className="fa-solid fa-spinner fa-spin text-2xl text-gray-400"></i>
@@ -411,22 +443,50 @@ const App: React.FC = () => {
          )}
       </main>
 
-      {/* Right Sidebar (Trending/Suggestions) */}
-      <aside className="hidden lg:block w-80 p-8 border-l border-gray-200 sticky top-0 h-screen">
+      {/* Right Sidebar (Popular Ranking) */}
+      <aside className="hidden lg:block w-80 p-8 border-l border-gray-200 sticky top-0 h-screen overflow-y-auto no-scrollbar">
          <div className="mb-8">
-            <h3 className="font-bold text-gray-900 mb-4">인기 도서</h3>
-            <div className="space-y-4">
-                {[1, 2, 3].map(i => (
-                    <div key={i} className="flex gap-3 items-center group cursor-pointer">
-                        <div className="w-12 h-16 bg-gray-200 rounded shadow-sm group-hover:shadow-md transition-all"></div>
-                        <div>
-                            <p className="font-semibold text-sm group-hover:text-amber-600 transition-colors">The Midnight Library</p>
-                            <p className="text-xs text-gray-500">Matt Haig</p>
+            <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <i className="fa-solid fa-crown text-amber-500"></i>
+                인기 도서 랭킹
+            </h3>
+            <div className="space-y-6">
+                {popularBooks.length > 0 ? (
+                    popularBooks.map((book, index) => (
+                        <div key={book.title} className="flex gap-4 items-center group cursor-pointer">
+                            <div className="relative flex-shrink-0">
+                                <div className="w-14 h-20 bg-gray-100 rounded shadow-sm group-hover:shadow-md transition-all overflow-hidden border border-gray-100">
+                                    <img 
+                                        src={book.coverImage} 
+                                        alt={book.title} 
+                                        className="w-full h-full object-cover"
+                                    />
+                                </div>
+                                <div className={`absolute -top-2 -left-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2 border-white shadow-sm
+                                    ${index === 0 ? 'bg-yellow-400 text-white' : 
+                                      index === 1 ? 'bg-gray-300 text-white' : 
+                                      index === 2 ? 'bg-orange-400 text-white' : 'bg-white text-gray-400'}`}>
+                                    {index + 1}
+                                </div>
+                            </div>
+                            <div className="flex-1 overflow-hidden">
+                                <p className="font-bold text-sm text-gray-900 group-hover:text-amber-600 transition-colors truncate" title={book.title}>{book.title}</p>
+                                <p className="text-xs text-gray-500 mb-1">{book.author}</p>
+                                <div className="flex items-center gap-1 text-[10px] font-medium text-amber-600">
+                                    <i className="fa-solid fa-heart"></i>
+                                    <span>{book.totalLikes}</span>
+                                </div>
+                            </div>
                         </div>
+                    ))
+                ) : (
+                    <div className="text-center py-10 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                        <p className="text-xs text-gray-400">데이터를 집계 중입니다...</p>
                     </div>
-                ))}
+                )}
             </div>
          </div>
+         
          <div className="p-4 bg-gray-100 rounded-xl">
             <p className="text-xs text-gray-500 leading-relaxed">
                 북맥 © 2024<br/>

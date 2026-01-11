@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Post, Comment, UserProfile } from '../types';
 import { db, auth } from '../firebase';
-import { doc, updateDoc, arrayUnion, arrayRemove, collection, addDoc, onSnapshot, query, orderBy, deleteDoc } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, arrayRemove, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, increment } from 'firebase/firestore';
 
 interface PostCardProps {
   post: Post;
@@ -71,9 +71,15 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit, onUserCl
 
     try {
       if (wasLiked) {
-        await updateDoc(postRef, { likes: arrayRemove(uid) });
+        await updateDoc(postRef, { 
+          likes: arrayRemove(uid),
+          likeCount: increment(-1) 
+        });
       } else {
-        await updateDoc(postRef, { likes: arrayUnion(uid) });
+        await updateDoc(postRef, { 
+          likes: arrayUnion(uid),
+          likeCount: increment(1)
+        });
       }
     } catch (err: any) {
       // Revert if error
@@ -125,6 +131,11 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit, onUserCl
         createdAt: Date.now()
       });
       
+      // Update comment count
+      await updateDoc(doc(db, 'posts', post.id), {
+          commentCount: increment(1)
+      });
+      
       setNewComment('');
     } catch (err: any) {
       console.error("Error adding comment:", err);
@@ -142,6 +153,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, currentUser, onEdit, onUserCl
     if (!confirm("정말 이 댓글을 삭제하시겠습니까?")) return;
     try {
       await deleteDoc(doc(db, 'posts', post.id, 'comments', commentId));
+      await updateDoc(doc(db, 'posts', post.id), {
+          commentCount: increment(-1)
+      });
     } catch (err: any) {
       console.error("Error deleting comment:", err);
       alert("댓글 삭제 실패: " + err.message);

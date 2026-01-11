@@ -84,11 +84,11 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose,
       const finalCover = coverUrl.trim() || `https://covers.openlibrary.org/b/title/${encodeURIComponent(title)}-L.jpg?default=false`;
 
       const postData = {
-        bookTitle: title,
-        bookAuthor: author,
+        bookTitle: title.trim(),
+        bookAuthor: author.trim(),
         coverImage: finalCover,
-        quote,
-        review,
+        quote: quote.trim(),
+        review: review.trim(),
         rating,
         location: location || null,
         ...(isEditMode ? {} : { 
@@ -96,7 +96,9 @@ const CreatePostModal: React.FC<CreatePostModalProps> = ({ currentUser, onClose,
             authorName: currentUser.displayName || '익명', 
             authorPhoto: currentUser.photoURL || null,
             likes: [],
-            createdAt: Date.now() 
+            likeCount: 0,
+            createdAt: Date.now(),
+            commentCount: 0
         })
       };
 

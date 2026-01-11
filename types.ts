@@ -31,6 +31,7 @@ export interface Post {
   review: string;
   rating: number; // 1-5
   likes: string[]; // Array of UIDs who liked
+  likeCount: number; // For ranking
   createdAt: number;
   commentCount: number;
   location?: {
