@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { auth, googleProvider, db } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
@@ -24,6 +25,7 @@ const App: React.FC = () => {
   const [feedType, setFeedType] = useState<FeedType>(FeedType.GLOBAL);
   const [posts, setPosts] = useState<Post[]>([]);
   const [popularBooks, setPopularBooks] = useState<RankedBook[]>([]);
+  const [popularLoading, setPopularLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -159,8 +161,10 @@ const App: React.FC = () => {
   // Fetch Popular Books Ranking
   useEffect(() => {
     const fetchPopular = async () => {
+      setPopularLoading(true);
       try {
-        const q = query(collection(db, 'posts'), orderBy('likeCount', 'desc'), limit(50));
+        // use createdAt to include all posts, then aggregate client-side
+        const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100));
         const snapshot = await getDocs(q);
         const allPosts = snapshot.docs.map(doc => doc.data() as Post);
         
@@ -168,7 +172,9 @@ const App: React.FC = () => {
         const bookMap: { [key: string]: RankedBook } = {};
         
         allPosts.forEach(post => {
-            const title = post.bookTitle.trim();
+            const title = (post.bookTitle || "").trim();
+            if (!title) return;
+
             if (bookMap[title]) {
                 bookMap[title].totalLikes += (post.likes?.length || 0);
             } else {
@@ -183,18 +189,21 @@ const App: React.FC = () => {
 
         const sorted = Object.values(bookMap)
             .sort((a, b) => b.totalLikes - a.totalLikes)
+            .filter(b => b.totalLikes > 0 || allPosts.length > 0) // Show even if 0 likes if we have posts
             .slice(0, 5);
 
         setPopularBooks(sorted);
       } catch (err) {
         console.error("Error fetching popular books:", err);
+      } finally {
+        setPopularLoading(false);
       }
     };
 
     if (!authLoading) {
       fetchPopular();
     }
-  }, [authLoading]);
+  }, [authLoading, posts.length]); // Re-calculate when new posts are added
 
   // Reset and Fetch Initial Posts when FeedType or User changes
   useEffect(() => {
@@ -451,7 +460,12 @@ const App: React.FC = () => {
                 인기 도서 랭킹
             </h3>
             <div className="space-y-6">
-                {popularBooks.length > 0 ? (
+                {popularLoading ? (
+                    <div className="text-center py-10 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                        <i className="fa-solid fa-spinner fa-spin text-amber-600 mb-2"></i>
+                        <p className="text-xs text-gray-400">데이터를 집계 중입니다...</p>
+                    </div>
+                ) : popularBooks.length > 0 ? (
                     popularBooks.map((book, index) => (
                         <div key={book.title} className="flex gap-4 items-center group cursor-pointer">
                             <div className="relative flex-shrink-0">
@@ -460,6 +474,7 @@ const App: React.FC = () => {
                                         src={book.coverImage} 
                                         alt={book.title} 
                                         className="w-full h-full object-cover"
+                                        onError={(e) => (e.currentTarget.src = 'https://via.placeholder.com/150x200?text=No+Cover')}
                                     />
                                 </div>
                                 <div className={`absolute -top-2 -left-2 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2 border-white shadow-sm
@@ -481,7 +496,7 @@ const App: React.FC = () => {
                     ))
                 ) : (
                     <div className="text-center py-10 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                        <p className="text-xs text-gray-400">데이터를 집계 중입니다...</p>
+                        <p className="text-xs text-gray-400">아직 등록된 도서가 없습니다.</p>
                     </div>
                 )}
             </div>
