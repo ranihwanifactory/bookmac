@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { auth, googleProvider, db } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
@@ -163,12 +162,10 @@ const App: React.FC = () => {
     const fetchPopular = async () => {
       setPopularLoading(true);
       try {
-        // use createdAt to include all posts, then aggregate client-side
         const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100));
         const snapshot = await getDocs(q);
         const allPosts = snapshot.docs.map(doc => doc.data() as Post);
         
-        // Aggregate by book title
         const bookMap: { [key: string]: RankedBook } = {};
         
         allPosts.forEach(post => {
@@ -189,7 +186,7 @@ const App: React.FC = () => {
 
         const sorted = Object.values(bookMap)
             .sort((a, b) => b.totalLikes - a.totalLikes)
-            .filter(b => b.totalLikes > 0 || allPosts.length > 0) // Show even if 0 likes if we have posts
+            .filter(b => b.totalLikes > 0 || allPosts.length > 0)
             .slice(0, 5);
 
         setPopularBooks(sorted);
@@ -203,9 +200,8 @@ const App: React.FC = () => {
     if (!authLoading) {
       fetchPopular();
     }
-  }, [authLoading, posts.length]); // Re-calculate when new posts are added
+  }, [authLoading, posts.length]);
 
-  // Reset and Fetch Initial Posts when FeedType or User changes
   useEffect(() => {
     if (view === 'home' && !authLoading) {
         setPosts([]);
@@ -215,7 +211,6 @@ const App: React.FC = () => {
     }
   }, [feedType, user?.uid, view, authLoading]);
 
-  // Intersection Observer for Infinite Scroll
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
         if (entries[0].isIntersecting && hasMore && !loadingMore && !postsLoading && !isMapView) {
@@ -269,7 +264,6 @@ const App: React.FC = () => {
       setPosts(prev => prev.filter(p => p.id !== postId));
   };
 
-  // Navigation handlers
   const navigateToProfile = (uid: string) => {
     setProfileUserId(uid);
     setView('profile');
@@ -452,7 +446,7 @@ const App: React.FC = () => {
          )}
       </main>
 
-      {/* Right Sidebar (Popular Ranking) */}
+      {/* Right Sidebar (Popular Ranking & Ad) */}
       <aside className="hidden lg:block w-80 p-8 border-l border-gray-200 sticky top-0 h-screen overflow-y-auto no-scrollbar">
          <div className="mb-8">
             <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2">
@@ -499,6 +493,20 @@ const App: React.FC = () => {
                         <p className="text-xs text-gray-400">아직 등록된 도서가 없습니다.</p>
                     </div>
                 )}
+            </div>
+         </div>
+
+         {/* Kakao Ad Section */}
+         <div className="mb-8 flex flex-col items-center">
+            <span className="text-[9px] text-gray-400 mb-2 uppercase tracking-[0.2em] font-bold">Advertisement</span>
+            <div className="bg-white border border-gray-100 rounded-lg overflow-hidden flex items-center justify-center shadow-sm" style={{ width: '300px', height: '250px' }}>
+                <ins 
+                  className="kakao_ad_area" 
+                  style={{ display: 'none' }}
+                  data-ad-unit="DAN-CRQmgBZtmIvxgGwT"
+                  data-ad-width="300"
+                  data-ad-height="250"
+                ></ins>
             </div>
          </div>
          
